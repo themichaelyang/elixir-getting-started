@@ -81,12 +81,12 @@ defimpl Iter.Iterable, for: List do
     alias Iter.Step, as: Step
     alias Iter.Reduction, as: Reduction
 
-    def do_reduce([], step, reducer), do: Reduction.new(:done, step.accumulated)
+    def do_reduce([], step, _reducer), do: Reduction.new(:done, step.accumulated)
     def do_reduce(list, step = %Step{instruction: :continue}, reducer) do
         [head | tail] = list
         do_reduce(tail, reducer.(head, step), reducer)
     end
-    def do_reduce(list, step = %Step{instruction: :stop}, reducer) do
+    def do_reduce(_list, step = %Step{instruction: :stop}, _reducer) do
         Reduction.new(:stopped, step.accumulated)
     end
     def do_reduce(list, step = %Step{instruction: :pause}, reducer) do
