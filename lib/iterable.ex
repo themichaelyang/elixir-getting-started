@@ -5,6 +5,11 @@
 
 # Acc and Reduction seem to be not idiomatic Elixir, which seems
 # to prefer raw tuples with leading atoms
+
+# why :done, :halt and :suspend?
+# see: https://elixir-lang.org/blog/2013/12/11/elixir-s-new-continuable-enumerators/
+# and: https://hexdocs.pm/elixir/Enumerable.html#reduce/3
+
 defmodule Acc do
     # https://stackoverflow.com/questions/41609368/enforce-all-keys-in-a-struct
     @enforce_keys [:instruction, :accumulated]
@@ -51,13 +56,7 @@ end
 
 defmodule Iter do
     def map(iter, func) do
-        # why :done, :halt and :suspend?
-        # see: https://elixir-lang.org/blog/2013/12/11/elixir-s-new-continuable-enumerators/
-        # and: https://hexdocs.pm/elixir/Enumerable.html#reduce/3
-        reducer = fn (item, acc) -> Acc.continue([func.(item) | acc]) end
-
-        # accumulator builds from start of iter
-        Iterable.reduce(iter, Acc.continue([]), reducer).result |> :list.reverse
+        iter |> reverse_map(&1) |> reverse_map(func)
     end
 end
 
@@ -65,8 +64,9 @@ defprotocol Iterable do
     @spec reduce(term, Acc.t, (term, Acc.t -> term)) :: Reduction.t
     def reduce(iterable, accumulator, reducer)
 
-    # def iterate(iterable, )
+    def reverse_map(iterable, func) do
+        reducer = fn (item, acc) -> Acc.continue([func.(item) | acc]) end
+        iterable |> Iterable.reduce(Acc.continue([]), reducer).result
+    end
 end
 
-# defimpl Iterable, for: List do
-# end
