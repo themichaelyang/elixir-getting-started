@@ -59,9 +59,9 @@ defmodule Iter do
     def reduce(iterable, init_acc, reducer) do
         wrapped_reducer = fn (element, step) -> 
             next_acc = reducer.(element, step.accumulated)
-            Reduction.new(:continue, next_acc)
+            Step.new(:continue, next_acc)
         end
-        Iterable.do_reduce(iterable, Step.new(:continue, init_acc), wrapped_reducer).accumulated
+        Iterable.do_reduce(iterable, Step.new(:continue, init_acc), wrapped_reducer).result
     end
 
     def reverse_map(iterable, func) do
@@ -84,8 +84,7 @@ defimpl Iter.Iterable, for: List do
     def do_reduce([], step, reducer), do: Reduction.new(:done, step.accumulated)
     def do_reduce(list, step = %Step{instruction: :continue}, reducer) do
         [head | tail] = list
-        new_acc = reducer.(head, step.accumulated)
-        do_reduce(tail, Step.new(:continue, new_acc), reducer)
+        do_reduce(tail, reducer.(head, step), reducer)
     end
     def do_reduce(list, step = %Step{instruction: :stop}, reducer) do
         Reduction.new(:stopped, step.accumulated)
