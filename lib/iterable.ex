@@ -10,8 +10,20 @@
 # see: https://elixir-lang.org/blog/2013/12/11/elixir-s-new-continuable-enumerators/
 # and: https://hexdocs.pm/elixir/enumerable.html#reduce/3
 
-defprotocol Iterable do
-    @type reducer (term, Step.t -> Step.t)
+# scoping of modules still unclear (reducer type defined on parent module not being picked up in nested modules)
+# ah! i think that is because module nesting is syntactic sugar, and doesn't actually relate the two
+# so probably nesting reduce() ===> Iter.Iterable.reducer() which doesn't exist
+
+defmodule Iter do
+    @type reducer() :: (term, Step.t -> Step.t)
+
+    # is this really necessary? why can't I define functions in protocols like a module
+    # i guess this macro doesn't allow that. defimpl needed (see getting started)
+    defprotocol Iterable do
+        @type reducer() :: Iter.reducer
+        @spec do_reduce(term(), Step.t(), reducer()) :: Reduction.t()
+        def do_reduce(iterable, step, reducer)
+    end
 
     defmodule Step do
         # https://stackoverflow.com/questions/41609368/enforce-all-keys-in-a-struct
@@ -32,6 +44,9 @@ defprotocol Iterable do
 
     defmodule Reduction do
         @enforce_keys [:status, :result]
+        defstruct @enforce_keys
+        
+        @type reducer() :: Iter.reducer
         @type status :: :done | :stopped | :paused
         @type continuation :: {term(), Step.t(), reducer()}
         @type t :: %Reduction{status: status, result: term | continuation}
@@ -41,34 +56,41 @@ defprotocol Iterable do
         end
     end
 
-    @spec reduce(term(), Step.t(), reducer()) :: Reduction.t()
-    def reduce(iterable, step, reducer)
+    def reduce(iterable, init_acc, reducer) do
+        wrapped_reducer = fn (element, step) -> 
+            next_acc = reducer.(element, step.accumulated)
+            Reduction.new(:continue, next_acc)
+        end
+        Iterable.do_reduce(iterable, Step.new(:continue, init_acc), wrapped_reducer).accumulated
+    end
 
     def reverse_map(iterable, func) do
         reducer = fn (item, step) -> 
             next_acc = [func.(item) | step.acc]
-            Step.new(instr, next_acc)
+            Step.new(:continue, next_acc)
         end
-        step = Step.new(:continue, [])
-        iterable |> Iterable.reduce(step, reducer)
+        iterable |> Iterable.do_reduce(Step.new(:continue, []), reducer)
     end
     
     def map(iter, func) do
-        iter |> reverse_map(&1) |> reverse_map(func)
+        iter |> reverse_map(&(&1)) |> reverse_map(func)
     end
 end
 
-defimpl Iterable, for: List do
-    def reduce([], step, reducer), do: Reduction.new(:done, [])
-    def reduce(list, step = %step{instruction: :continue}, reducer) do
+defimpl Iter.Iterable, for: List do
+    alias Iter.Step, as: Step
+    alias Iter.Reduction, as: Reduction
+
+    def do_reduce([], step, reducer), do: Reduction.new(:done, step.accumulated)
+    def do_reduce(list, step = %Step{instruction: :continue}, reducer) do
         [head | tail] = list
-        new_acc = reducer(head, step.accumulated)
-        reduce(tail, step.new(:continue, new_acc), reducer)
+        new_acc = reducer.(head, step.accumulated)
+        do_reduce(tail, Step.new(:continue, new_acc), reducer)
     end
-    def reduce(list, step = %step{instruction: :stop}, reducer) do
+    def do_reduce(list, step = %Step{instruction: :stop}, reducer) do
         Reduction.new(:stopped, step.accumulated)
     end
-    def reduce(list, step = %Step{instruction: :pause}, reducer) do
+    def do_reduce(list, step = %Step{instruction: :pause}, reducer) do
         # a continuation is a tuple of the params to reduce\3
         Reduction.new(:paused, {list, Step.continue(step), reducer})
     end
