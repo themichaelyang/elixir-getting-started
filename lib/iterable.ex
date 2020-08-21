@@ -1,72 +1,76 @@
 # practicing to understand structs, enumerables
-# and streams by reimplementing Enumerable
+# and streams by reimplementing enumerable
 
-# continuations, accumulators, reduce
+# continuations, accumulateds, reduce
 
-# Acc and Reduction seem to be not idiomatic Elixir, which seems
+# acc and reduction seem to be not idiomatic elixir, which seems
 # to prefer raw tuples with leading atoms
 
 # why :done, :halt and :suspend?
 # see: https://elixir-lang.org/blog/2013/12/11/elixir-s-new-continuable-enumerators/
-# and: https://hexdocs.pm/elixir/Enumerable.html#reduce/3
+# and: https://hexdocs.pm/elixir/enumerable.html#reduce/3
 
-defmodule Acc do
-    # https://stackoverflow.com/questions/41609368/enforce-all-keys-in-a-struct
-    @enforce_keys [:instruction, :accumulated]
-    defstruct @enforce_keys
+defprotocol Iterable do
+    @type reducer (term, Step.t -> Step.t)
 
-    @type instruction :: :continue | :stop | :pause 
-    @type t :: %Acc{instruction: instruction, accumulated: term}
+    defmodule Step do
+        # https://stackoverflow.com/questions/41609368/enforce-all-keys-in-a-struct
+        @enforce_keys [:instruction, :accumulated]
+        defstruct @enforce_keys
 
-    @spec continue(term) :: Acc.t
-    def continue(acc) do
-        %Acc{instruction: :continue, accumulated: acc}
+        @type instruction :: :continue | :stop | :pause 
+        @type t :: %Step{instruction: instruction, accumulated: term}
+
+        def new(instr, acc) do
+            %Step{instruction: instr, accumulated: acc}
+        end
+
+        def continue(step) do
+            %Step{instruction: :continue, accumulated: step.accumulated}
+        end
     end
 
-    @spec stop(term) :: Acc.t
-    def stop(acc) do 
-        %Acc{instruction: :stop, accumulated: acc}
+    defmodule Reduction do
+        @enforce_keys [:status, :result]
+        @type status :: :done | :stopped | :paused
+        @type continuation :: {term(), Step.t(), reducer()}
+        @type t :: %Reduction{status: status, result: term | continuation}
+
+        def new(status, result) do
+            %Reduction{status: status, result: result}
+        end
     end
 
-    @spec pause(term) :: Acc.t
-    def pause(acc) do 
-        %Acc{instruction: :pause, accumulated: acc}
-    end
-end
+    @spec reduce(term(), Step.t(), reducer()) :: Reduction.t()
+    def reduce(iterable, step, reducer)
 
-defmodule Reduction do
-    @enforce_keys [:status, :result]
-    defstruct @enforce_keys ++ [:continuation]
-
-    @type status :: :done | :stopped | :paused
-    @type t :: %Reduction{status: status, result: term, :continuation: term}
-
-    def done(result) do
-        %Reduction{status: :done, result: result}
+    def reverse_map(iterable, func) do
+        reducer = fn (item, step) -> 
+            next_acc = [func.(item) | step.acc]
+            Step.new(instr, next_acc)
+        end
+        step = Step.new(:continue, [])
+        iterable |> Iterable.reduce(step, reducer)
     end
     
-    def stopped(result) do
-        %Reduction{status: :stopped, result: result}
-    end
-    
-    def paused(result) do
-        %Reduction{status: :paused, result: result}
-    end
-end
-
-defmodule Iter do
     def map(iter, func) do
         iter |> reverse_map(&1) |> reverse_map(func)
     end
 end
 
-defprotocol Iterable do
-    @spec reduce(term, Acc.t, (term, Acc.t -> term)) :: Reduction.t
-    def reduce(iterable, accumulator, reducer)
-
-    def reverse_map(iterable, func) do
-        reducer = fn (item, acc) -> Acc.continue([func.(item) | acc]) end
-        iterable |> Iterable.reduce(Acc.continue([]), reducer).result
+defimpl Iterable, for: List do
+    def reduce([], step, reducer), do: Reduction.new(:done, [])
+    def reduce(list, step = %step{instruction: :continue}, reducer) do
+        [head | tail] = list
+        new_acc = reducer(head, step.accumulated)
+        reduce(tail, step.new(:continue, new_acc), reducer)
+    end
+    def reduce(list, step = %step{instruction: :stop}, reducer) do
+        Reduction.new(:stopped, step.accumulated)
+    end
+    def reduce(list, step = %Step{instruction: :pause}, reducer) do
+        # a continuation is a tuple of the params to reduce\3
+        Reduction.new(:paused, {list, Step.continue(step), reducer})
     end
 end
 
