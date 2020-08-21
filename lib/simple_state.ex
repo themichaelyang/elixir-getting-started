@@ -11,6 +11,7 @@ defmodule SimpleState do
     end
 
     def set(pid, state) do
+        # send msg to pid of state container, but receive in current proc
         send(pid, {:set, self(), state})
         receive do
             response -> response
