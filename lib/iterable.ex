@@ -69,7 +69,9 @@ defmodule Iter do
       next_acc = [func.(item) | step.accumulated]
       Step.new(:continue, next_acc)
     end
-    iterable |> Iterable.do_reduce(Step.new(:continue, []), reducer)
+    # apparently cannot pipe into & functions
+    # iterable |> Iterable.do_reduce(Step.new(:continue, []), reducer) |> &(&1[:result]).()
+    iterable |> Iterable.do_reduce(Step.new(:continue, []), reducer) |> Map.get(:result)
   end
   
   def map(iter, func) do
